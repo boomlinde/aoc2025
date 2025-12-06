@@ -2,128 +2,87 @@ const std = @import("std");
 
 const input = @embedFile("inputs/6");
 
+var width: usize = 0;
+var height: usize = 0;
+var cols: usize = 0;
+
 pub fn main() anyerror!void {
+    var t = Tokenizer{};
+    var a: [2000]ArithStack = [1]ArithStack{.{}} ** 2000;
+    var col: usize = 0;
+
     var sum1: usize = 0;
     var sum2: usize = 0;
 
-    for (0..dim.cols) |col| {
-        sum1 += colSum1(col);
-        sum2 += colSum2(col);
+    for (input, 0..) |b, i| {
+        if (t.in(b)) |token| {
+            if (a[col].handle(token)) |val| sum1 += val;
+            col += 1;
+        }
+        if (b == '\n') {
+            if (width == 0) width = i;
+            cols = col;
+            height += 1;
+            col = 0;
+        }
     }
+
+    for (0..width) |ix| for (0..height + 1) |y| {
+        if (t.in(get(width - 1 - ix, y))) |token| if (a[0].handle(token)) |val| {
+            sum2 += val;
+        };
+    };
 
     std.debug.print("{}\n{}\n", .{ sum1, sum2 });
 }
 
-fn colSum1(col: usize) usize {
-    var acc: usize = if (dim.spans[col].op == '*') 1 else 0;
-    for (0..dim.rows) |row| {
-        const trimmed = std.mem.trim(u8, get(row, col), " ");
-        const val = std.fmt.parseInt(usize, trimmed, 10) catch unreachable;
-        switch (dim.spans[col].op) {
-            '*' => acc *= val,
-            '+' => acc += val,
-            else => unreachable,
-        }
-    }
-    return acc;
+fn get(x: usize, y: usize) u8 {
+    if (x >= width or y >= height) return ' ';
+    return input[x + (width + 1) * y];
 }
 
-fn colSum2(col: usize) usize {
-    const span = dim.spans[col];
-    const rlen = if (col == dim.cols - 1)
-        span.len()
-    else
-        span.len() - 1;
+const Tokenizer = struct {
+    buf: std.BoundedArray(u8, 10) = .{},
 
-    var acc: usize = if (dim.spans[col].op == '*') 1 else 0;
-    for (0..rlen) |x| {
-        var val: usize = 0;
-        for (0..dim.rows) |row| {
-            const s = get(row, col);
-            if (s[x] >= '0' and s[x] <= '9')
-                val = val * 10 + (s[x] - '0');
-        }
-        switch (span.op) {
-            '*' => acc *= val,
-            '+' => acc += val,
-            else => unreachable,
-        }
-    }
-    return acc;
-}
-
-fn get(row: usize, col: usize) []const u8 {
-    const row_start = (dim.op_row.len + 1) * row;
-    const row_data = input[row_start .. row_start + dim.op_row.len];
-    return dim.spans[col].resolve(row_data);
-}
-
-const Span = struct {
-    start: usize = 0,
-    end: usize = 0,
-    op: u8 = undefined,
-
-    pub inline fn resolve(self: Span, src: []const u8) []const u8 {
-        return src[self.start..self.end];
-    }
-
-    pub inline fn len(self: Span) usize {
-        return self.end - self.start;
+    fn in(self: *Tokenizer, c: u8) ?[]const u8 {
+        if (c == ' ' or c == '\n') {
+            if (self.buf.len != 0) {
+                defer self.buf.len = 0;
+                return self.buf.constSlice();
+            }
+        } else self.buf.append(c) catch unreachable;
+        return null;
     }
 };
 
-fn spans(comptime op_row: []const u8) []const Span {
-    var out: []const Span = &.{};
-    var span = Span{};
-    for (op_row, 0..) |c, i| {
-        if (c != ' ') {
-            if (span.start != span.end)
-                out = append(Span, out, span);
-            span.start = i;
-            span.end = i;
-            span.op = c;
-        }
-        span.end += 1;
+const ArithStack = struct {
+    buf: [10]usize = undefined,
+    idx: usize = 0,
+
+    fn pop(self: *ArithStack) ?usize {
+        if (self.idx == 0) return null;
+        self.idx -= 1;
+        return self.buf[self.idx];
     }
-    if (span.start != span.end)
-        out = append(Span, out, span);
-    return out;
-}
 
-fn append(
-    comptime T: type,
-    comptime s: []const T,
-    comptime v: T,
-) []const T {
-    return s ++ &[1]T{v};
-}
-
-const dim: struct {
-    rows: usize,
-    cols: usize,
-    op_row: []const u8,
-    spans: []const Span,
-} = calc_dim: {
-    @setEvalBranchQuota(1_000_000);
-    var rows: usize = 0;
-
-    // Find operator row and # cols
-    const op_row = get_op_row_blk: {
-        var row_iter = std.mem.splitScalar(u8, input, '\n');
-        while (row_iter.next()) |row| {
-            if (row.len == 0) continue;
-            if (row[0] == '*' or row[0] == '+')
-                break :get_op_row_blk row;
-            rows += 1;
+    fn handle(self: *ArithStack, token: []const u8) ?usize {
+        if (std.mem.eql(u8, token, "*")) {
+            var out: usize = 1;
+            while (self.pop()) |val| out *= val;
+            return out;
+        } else if (std.mem.eql(u8, token, "+")) {
+            var out: usize = 0;
+            while (self.pop()) |val| out += val;
+            return out;
         }
-        unreachable;
-    };
-    const s = spans(op_row);
 
-    break :calc_dim .{
-        .rows = rows,
-        .cols = s.len,
-        .op_row = op_row,
-        .spans = s,
-    };
+        if (std.mem.endsWith(u8, token, "*") or std.mem.endsWith(u8, token, "+")) {
+            _ = self.handle(token[0 .. token.len - 1]);
+            return self.handle(token[token.len - 1 .. token.len]);
+        }
+        self.buf[self.idx] =
+            std.fmt.parseInt(usize, token, 10) catch unreachable;
+        self.idx += 1;
+        return null;
+    }
 };
