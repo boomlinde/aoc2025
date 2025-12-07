@@ -32,8 +32,8 @@ fn genMap(out: *[input.len]usize) State {
 }
 
 fn p1(state: State) usize {
-    var iter = state.@"0";
-    const x = state.@"1";
+    var iter = state[0];
+    const x = state[1];
     while (iter.next()) |line| {
         if (line.len == 0) return 0;
         if (line[x] == cell_visited) return 0;
@@ -46,8 +46,8 @@ fn p1(state: State) usize {
 }
 
 fn p2(state: State) usize {
-    var iter = state.@"0";
-    const x = state.@"1";
+    var iter = state[0];
+    const x = state[1];
     while (iter.next()) |line| {
         if (line.len == 0) return 1;
         if (line[x] == cell_split) {
